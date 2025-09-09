@@ -26,11 +26,11 @@
 
       // SVG Icons for better UI
       const SunIcon = () => (
-        <svg xmlns="http://www.w.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
       );
 
       const MoonIcon = () => (
-        <svg xmlns="http://www.w.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
       );
 
 
@@ -45,13 +45,12 @@
         const [previousBalance, setPreviousBalance] = React.useState('');
         const [notification, setNotification] = React.useState(null);
 
-        const printRef = React.useRef();
         const customerNameRef = React.useRef();
         const itemRefs = React.useRef({});
         
         // Function to show notifications
-        const showNotification = (message) => {
-          setNotification(message);
+        const showNotification = (message, type = 'error') => {
+          setNotification({ message, type });
           setTimeout(() => {
             setNotification(null);
           }, 3000); // Hide after 3 seconds
@@ -179,50 +178,51 @@
           }
           setIsInvoiceFinalized(true);
         }, [itemsTotal, previousBalance]);
+        
+        const printInvoice = React.useCallback(async () => {
+            if (grandTotal <= 0) {
+                showNotification("Cannot print an empty invoice.");
+                return;
+            }
 
-        const printInvoice = React.useCallback(() => {
-          if (grandTotal <= 0) {
-            showNotification("Please complete the invoice before printing.");
-            return;
-          }
+            const receiptData = {
+                billNumber: billNumber,
+                date: new Date().toLocaleString(),
+                customerName: customerName || 'Walk-in Customer',
+                customerPhone: customerPhone,
+                items: items.filter(item => item.price > 0),
+                itemsTotal: itemsTotal,
+                previousBalance: Number(previousBalance || 0),
+                grandTotal: grandTotal,
+                currency: currency,
+            };
 
-          const printContent = printRef.current.innerHTML;
-          const printWindow = window.open('', '_blank');
-          
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Bill #${billNumber}</title>
-                <style>
-                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 12px; margin: 0; padding: 0; }
-                  .print-container { width: 80mm; margin: auto; padding: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
-                  .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 10px; }
-                  .store-name { font-size: 18px; font-weight: bold; }
-                  .bill-info { font-size: 10px; color: #555; }
-                  .item-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
-                  .item-details { display: flex; flex-direction: column; }
-                  .item-name { font-weight: 600; }
-                  .item-qty-price { font-size: 10px; color: #333; }
-                  .item-total { text-align: right; font-weight: bold; }
-                  .total-row { border-top: 1px dashed #000; padding-top: 5px; margin-top: 10px; font-weight: bold; font-size: 12px; text-align: right; }
-                  .total-row div { margin-bottom: 2px; }
-                  .footer { text-align: center; margin-top: 15px; font-size: 9px; color: #777; }
-                  .finalized { background-color: #e8f5e8; padding: 3px; margin-top: 5px; text-align: center; font-weight: bold; font-size: 10px; }
-                </style>
-              </head>
-              <body onload="window.print(); setTimeout(() => { window.close(); }, 100)">
-                ${printContent}
-              </body>
-            </html>
-          `);
-          
-          printWindow.document.close();
-          printWindow.focus();
-          
-          setTimeout(() => {
-            generateNewBill();
-          }, 2000);
-        }, [grandTotal, billNumber, currency, itemsTotal, previousBalance]);
+            try {
+                // Send the data to the local print server
+                const response = await fetch('http://localhost:4000/print', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(receiptData),
+                });
+
+                if (response.ok) {
+                    showNotification("Sent to printer! Starting new bill...", "success");
+                    setTimeout(() => {
+                        generateNewBill();
+                    }, 1500);
+                } else {
+                    const error = await response.json();
+                    showNotification(`Print Error: ${error.message}`);
+                }
+            } catch (error) {
+                console.error('Print server connection error:', error);
+                showNotification('Print server not running. Please start the helper app.');
+            }
+
+        }, [grandTotal, billNumber, currency, items, itemsTotal, previousBalance, customerName, customerPhone, generateNewBill]);
+
 
         const generateNewBill = React.useCallback(() => {
           setIsInvoiceFinalized(false);
@@ -371,7 +371,6 @@
                           value={previousBalance}
                           onChange={(e) => {
                             const val = e.target.value;
-                            // Regex to allow only numbers and a single decimal point
                             if (/^\d*\.?\d*$/.test(val)) {
                               setPreviousBalance(val);
                             }
@@ -388,22 +387,22 @@
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
                       <h3 className="font-bold text-lg mb-3">Shortcuts</h3>
                       <ul className="space-y-2 text-sm">
-                          {[
-                              { key: 'Ctrl + Enter', action: 'Add New Item' },
-                              { key: 'Enter', action: 'Next Field' },
-                              { key: '↑ / ↓', action: 'Navigate Rows' },
-                              { key: 'Ctrl + F', action: 'Finalize Bill' },
-                              { key: 'Ctrl + P', action: 'Print Bill' },
-                              { key: 'Ctrl + Shift + N', action: 'New Bill' },
-                              { key: 'Esc', action: 'Focus Customer' },
-                          ].map(shortcut => (
-                              <li key={shortcut.action} className="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                  <span>{shortcut.action}</span>
-                                  <kbd className="px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-100 dark:bg-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md">
-                                      {shortcut.key}
-                                  </kbd>
-                              </li>
-                          ))}
+                        {[
+                            { key: 'Ctrl + Enter', action: 'Add New Item' },
+                            { key: 'Enter', action: 'Next Field' },
+                            { key: '↑ / ↓', action: 'Navigate Rows' },
+                            { key: 'Ctrl + F', action: 'Finalize Bill' },
+                            { key: 'Ctrl + P', action: 'Print Bill' },
+                            { key: 'Ctrl + Shift + N', action: 'New Bill' },
+                            { key: 'Esc', action: 'Focus Customer' },
+                        ].map(shortcut => (
+                            <li key={shortcut.action} className="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                <span>{shortcut.action}</span>
+                                <kbd className="px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-100 dark:bg-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md">
+                                    {shortcut.key}
+                                </kbd>
+                            </li>
+                        ))}
                       </ul>
                   </div>
                 </div>
@@ -521,45 +520,11 @@
                 </div>
               </div>
             </div>
-
-            {/* Hidden print area */}
-            <div ref={printRef} className="hidden">
-              <div className="print-container">
-                <div className="header">
-                  <div className="store-name">Geeta Sons</div>
-                  <div className="bill-info">123 Business Ave, Kurukshetra, Haryana, India</div>
-                  <div className="bill-info">Bill #: {billNumber} | Date: {new Date().toLocaleString()}</div>
-                  <div className="bill-info">Customer: {customerName || 'Walk-in Customer'}</div>
-                  {customerPhone && <div className="bill-info">Phone: {customerPhone}</div>}
-                  <div className="finalized">INVOICE</div>
-                </div>
-                
-                {items.map((item, index) => (
-                  <div key={item.id} className="item-row">
-                    <div className="item-details">
-                      <div className="item-name">{item.name || `Item ${index + 1}`}</div>
-                      <div className="item-qty-price">{item.quantity} × {currency}{item.price.toFixed(2)}</div>
-                    </div>
-                    <div className="item-total">{currency}{item.total.toFixed(2)}</div>
-                  </div>
-                ))}
-                
-                <div className="total-row">
-                  <div>Current Total: {currency}{itemsTotal.toFixed(2)}</div>
-                  {Number(previousBalance || 0) > 0 && <div>Previous Due: {currency}{Number(previousBalance || 0).toFixed(2)}</div>}
-                  <div>GRAND TOTAL: {currency}{grandTotal.toFixed(2)}</div>
-                </div>
-                
-                <div className="footer">
-                  <div>Thank you for your business!</div>
-                </div>
-              </div>
-            </div>
             
             {/* Notification Toast */}
             {notification && (
-              <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-red-500 text-white py-2 px-4 rounded-lg shadow-lg animate-bounce">
-                {notification}
+              <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 text-white py-2 px-4 rounded-lg shadow-lg animate-bounce ${notification.type === 'success' ? 'bg-green-500' : 'bg-red-500'}`}>
+                {notification.message}
               </div>
             )}
 
@@ -583,3 +548,4 @@
     </script>
 </body>
 </html>
+
