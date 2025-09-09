@@ -457,6 +457,7 @@
                                   value={item.quantity}
                                   onChange={(e) => updateItemTotal(item.id, 'quantity', e.target.value)}
                                   onKeyDown={(e) => handleItemKeyDown(e, item, 'quantity')}
+                                  onFocus={(e) => e.target.select()}
                                   className="w-16 p-1 bg-transparent border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
                                   disabled={isInvoiceFinalized}
                                 />
@@ -470,6 +471,7 @@
                                   value={item.price}
                                   onChange={(e) => updateItemTotal(item.id, 'price', e.target.value)}
                                   onKeyDown={(e) => handleItemKeyDown(e, item, 'price')}
+                                  onFocus={(e) => e.target.select()}
                                   className="w-24 p-1 bg-transparent border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-right"
                                   disabled={isInvoiceFinalized}
                                 />
@@ -548,4 +550,3 @@
     </script>
 </body>
 </html>
-
