@@ -41,20 +41,30 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
       );
 
+      // Helper function to generate a random bill number
+      const generateRandomBillNumber = () => {
+        const now = new Date();
+        const year = now.getFullYear().toString().slice(-2);
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+        return `${year}${month}${day}-${randomSuffix}`;
+      };
+
       const BillHistoryModal = ({ allBills, onClose, currency, onReprint }) => {
         const [searchTerm, setSearchTerm] = React.useState('');
 
         const filteredBills = allBills.filter(bill => 
             bill.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             bill.billNumber.toString().includes(searchTerm)
-        ).sort((a, b) => b.billNumber - a.billNumber);
+        ).sort((a, b) => new Date(b.date) - new Date(a.date)); // Sort by most recent date
 
         return (
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col modal-fade-in">
                     <div className="p-4 border-b dark:border-gray-700 flex justify-between items-center">
                         <h2 className="text-xl font-bold">Bill History</h2>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">&times;</button>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl font-bold">&times;</button>
                     </div>
                     <div className="p-4">
                         <input
@@ -105,7 +115,7 @@
         const [items, setItems] = React.useState([{ id: Date.now(), name: '', quantity: 1, price: 0, total: 0 }]);
         const [customerName, setCustomerName] = React.useState('');
         const [customerPhone, setCustomerPhone] = React.useState('');
-        const [billNumber, setBillNumber] = React.useState(1);
+        const [billNumber, setBillNumber] = React.useState(() => generateRandomBillNumber());
         const [isInvoiceFinalized, setIsInvoiceFinalized] = React.useState(false);
         const [darkMode, setDarkMode] = React.useState(false);
         const [currency, setCurrency] = React.useState('₹');
@@ -117,15 +127,11 @@
         const customerNameRef = React.useRef();
         const itemRefs = React.useRef({});
         
-        // Load saved bills and set next bill number on initial render
+        // Load saved bills on initial render
         React.useEffect(() => {
             try {
                 const savedBills = JSON.parse(localStorage.getItem('geetaSonsBills')) || [];
                 setAllBills(savedBills);
-                if (savedBills.length > 0) {
-                    const lastBill = savedBills.reduce((max, bill) => bill.billNumber > max.billNumber ? bill : max);
-                    setBillNumber(lastBill.billNumber + 1);
-                }
             } catch (error) {
                 console.error("Failed to load bills from localStorage", error);
                 setAllBills([]);
@@ -330,7 +336,7 @@
 
         const generateNewBill = React.useCallback(() => {
           setIsInvoiceFinalized(false);
-          setBillNumber(prev => prev + 1);
+          setBillNumber(generateRandomBillNumber()); // Generate a new random number
           setCustomerName('');
           setCustomerPhone('');
           setItems([{ id: Date.now(), name: '', quantity: 1, price: 0, total: 0 }]);
@@ -354,7 +360,9 @@
               generateNewBill();
             }
             if (e.key === 'Escape') {
-              if (customerNameRef.current) {
+              if (showHistory) {
+                  setShowHistory(false);
+              } else if (customerNameRef.current) {
                 customerNameRef.current.focus();
               }
             }
@@ -370,11 +378,12 @@
 
           window.addEventListener('keydown', handleKeyDown);
           return () => window.removeEventListener('keydown', handleKeyDown);
-        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized]);
+        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized, showHistory, grandTotal, billNumber]);
 
         return (
           <>
             {showHistory && <BillHistoryModal allBills={allBills} onClose={() => setShowHistory(false)} currency={currency} onReprint={handleReprint} />}
+            
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-2 sm:p-4 transition-colors duration-300">
                 <div className="max-w-7xl mx-auto">
                 {/* Header */}
@@ -498,12 +507,10 @@
                         <ul className="space-y-2 text-sm">
                             {[
                                 { key: 'Ctrl + Enter', action: 'Add New Item' },
-                                { key: 'Enter', action: 'Next Field' },
-                                { key: '↑ / ↓', action: 'Navigate Rows' },
                                 { key: 'Ctrl + F', action: 'Finalize Bill' },
                                 { key: 'Ctrl + P', action: 'Print Bill' },
                                 { key: 'Ctrl + Shift + N', action: 'New Bill' },
-                                { key: 'Esc', action: 'Focus Customer' },
+                                { key: 'Esc', action: 'Focus/Close' },
                             ].map(shortcut => (
                                 <li key={shortcut.action} className="flex justify-between items-center text-gray-600 dark:text-gray-400">
                                     <span>{shortcut.action}</span>
