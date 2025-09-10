@@ -147,6 +147,34 @@
           }, 3000); // Hide after 3 seconds
         };
 
+        const updateItemTotal = React.useCallback((id, field, value) => {
+          if (isInvoiceFinalized) return;
+          
+          setItems(items => items.map(item => {
+            if (item.id === id) {
+              let updatedValue = value;
+              
+              if (field === 'quantity') {
+                updatedValue = Math.max(1, Number(value) || 1);
+              }
+              
+              if (field === 'price') {
+                updatedValue = Math.max(0, Number(value) || 0);
+              }
+              
+              const updatedItem = { ...item, [field]: updatedValue };
+              
+              if (field === 'quantity' || field === 'price') {
+                updatedItem.total = updatedItem.quantity * updatedItem.price;
+              }
+              
+              return updatedItem;
+            }
+            return item;
+          }));
+        }, [isInvoiceFinalized]);
+
+
         const handleItemKeyDown = (e, item, field) => {
           const { key } = e;
           const currentIndex = items.findIndex(i => i.id === item.id);
@@ -161,6 +189,17 @@
               }
             }
           };
+
+          // Ctrl + ArrowUp to copy name from above
+          if (e.ctrlKey && key === 'ArrowUp' && field === 'name') {
+            e.preventDefault();
+            if (currentIndex > 0) {
+              const previousItemName = items[currentIndex - 1].name;
+              updateItemTotal(item.id, 'name', previousItemName);
+            }
+            return; 
+          }
+
 
           if (key === 'Enter') {
             e.preventDefault();
@@ -208,32 +247,6 @@
           }
         }, [darkMode]);
 
-        const updateItemTotal = React.useCallback((id, field, value) => {
-          if (isInvoiceFinalized) return;
-          
-          setItems(items.map(item => {
-            if (item.id === id) {
-              let updatedValue = value;
-              
-              if (field === 'quantity') {
-                updatedValue = Math.max(1, Number(value) || 1);
-              }
-              
-              if (field === 'price') {
-                updatedValue = Math.max(0, Number(value) || 0);
-              }
-              
-              const updatedItem = { ...item, [field]: updatedValue };
-              
-              if (field === 'quantity' || field === 'price') {
-                updatedItem.total = updatedItem.quantity * updatedItem.price;
-              }
-              
-              return updatedItem;
-            }
-            return item;
-          }));
-        }, [items, isInvoiceFinalized]);
 
         const addItem = React.useCallback(() => {
           if (isInvoiceFinalized) return;
@@ -327,7 +340,7 @@
                 }, 1500);
             }
 
-        }, [grandTotal, billNumber, currency, items, itemsTotal, previousBalance, customerName, customerPhone, generateNewBill, allBills]);
+        }, [grandTotal, billNumber, currency, items, itemsTotal, previousBalance, customerName, customerPhone, allBills]);
 
         const handleReprint = async (billToReprint) => {
             showNotification(`Reprinting Bill #${billToReprint.billNumber}...`, 'success');
@@ -507,6 +520,9 @@
                         <ul className="space-y-2 text-sm">
                             {[
                                 { key: 'Ctrl + Enter', action: 'Add New Item' },
+                                { key: 'Ctrl + ↑', action: 'Copy Name Above' },
+                                { key: 'Enter', action: 'Next Field' },
+                                { key: '↑ / ↓', action: 'Navigate Rows' },
                                 { key: 'Ctrl + F', action: 'Finalize Bill' },
                                 { key: 'Ctrl + P', action: 'Print Bill' },
                                 { key: 'Ctrl + Shift + N', action: 'New Bill' },
@@ -667,3 +683,5 @@
     </script>
 </body>
 </html>
+
+
