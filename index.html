@@ -190,7 +190,6 @@
             }
           };
 
-          // Ctrl + ArrowUp to copy name from above
           if (e.ctrlKey && key === 'ArrowUp' && field === 'name') {
             e.preventDefault();
             if (currentIndex > 0) {
@@ -216,14 +215,14 @@
             }
           }
 
-          if (key === 'ArrowUp') {
+          if (key === 'ArrowUp' && !e.ctrlKey) {
             e.preventDefault();
             if (currentIndex > 0) {
               focusOnField(currentIndex - 1, field);
             }
           }
 
-          if (key === 'ArrowDown') {
+          if (key === 'ArrowDown' && !e.ctrlKey) {
             e.preventDefault();
             if (currentIndex < items.length - 1) {
               focusOnField(currentIndex + 1, field);
@@ -264,6 +263,23 @@
           }, 50);
         }, [isInvoiceFinalized]);
 
+        const addItemAndFocusPrice = React.useCallback(() => {
+          if (isInvoiceFinalized) return;
+          
+          const newItemId = Date.now();
+          const newItem = { id: newItemId, name: '', quantity: 1, price: 0, total: 0 };
+          setItems(prev => [...prev, newItem]);
+          
+          setTimeout(() => {
+            const ref = itemRefs.current[`${newItemId}-price`];
+            if (ref) {
+              ref.focus();
+              ref.select();
+            }
+          }, 50);
+        }, [isInvoiceFinalized]);
+
+
         const removeItem = React.useCallback((id) => {
           if (isInvoiceFinalized) return;
           
@@ -285,12 +301,9 @@
         
         const sendPrintRequest = async (receiptData) => {
              try {
-                // Send the data to the local print server
                 const response = await fetch('http://localhost:4000/print', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(receiptData),
                 });
 
@@ -317,7 +330,7 @@
 
             const receiptData = {
                 billNumber: billNumber,
-                date: new Date().toISOString(), // Use ISO string for consistent storage
+                date: new Date().toISOString(),
                 customerName: customerName || 'Walk-in Customer',
                 customerPhone: customerPhone,
                 items: items.filter(item => item.price > 0),
@@ -330,7 +343,6 @@
             const printed = await sendPrintRequest(receiptData);
 
             if (printed) {
-                // Save the bill to localStorage
                 const updatedBills = [...allBills, receiptData];
                 localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
                 setAllBills(updatedBills);
@@ -349,7 +361,7 @@
 
         const generateNewBill = React.useCallback(() => {
           setIsInvoiceFinalized(false);
-          setBillNumber(generateRandomBillNumber()); // Generate a new random number
+          setBillNumber(generateRandomBillNumber());
           setCustomerName('');
           setCustomerPhone('');
           setItems([{ id: Date.now(), name: '', quantity: 1, price: 0, total: 0 }]);
@@ -364,6 +376,13 @@
 
         React.useEffect(() => {
           const handleKeyDown = (e) => {
+            // Priority shortcut: '+' to add item and focus price
+            if (e.key === '+' || e.key === '=') {
+              e.preventDefault();
+              addItemAndFocusPrice();
+              return;
+            }
+            
             if (e.ctrlKey && e.key === 'Enter') {
               e.preventDefault();
               addItem();
@@ -391,7 +410,7 @@
 
           window.addEventListener('keydown', handleKeyDown);
           return () => window.removeEventListener('keydown', handleKeyDown);
-        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized, showHistory, grandTotal, billNumber]);
+        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized, showHistory, addItemAndFocusPrice]);
 
         return (
           <>
@@ -519,6 +538,7 @@
                         <h3 className="font-bold text-lg mb-3">Shortcuts</h3>
                         <ul className="space-y-2 text-sm">
                             {[
+                                { key: '+', action: 'Add & Go to Price' },
                                 { key: 'Ctrl + Enter', action: 'Add New Item' },
                                 { key: 'Ctrl + ↑', action: 'Copy Name Above' },
                                 { key: 'Enter', action: 'Next Field' },
@@ -683,5 +703,4 @@
     </script>
 </body>
 </html>
-
 
