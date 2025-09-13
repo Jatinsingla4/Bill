@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Geeta Sons</title>
+    <title>Geeta Sons (QR Sync)</title>
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 2. React Libraries -->
@@ -12,8 +12,7 @@
     <!-- 3. Babel to transpile JSX -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 4. WebRTC and QR Code Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <!-- 4. QR Code Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-qr-scanner@1.0.8/qr-scanner.umd.min.js"></script>
 
@@ -43,27 +42,19 @@
 
       const QRCodeComponent = ({ value, size }) => {
         const [dataUrl, setDataUrl] = useState('');
-
         useEffect(() => {
           if (value && window.QRious) {
-            const qr = new window.QRious({
-              value: value,
-              size: size,
-            });
+            const qr = new window.QRious({ value, size });
             setDataUrl(qr.toDataURL());
           }
         }, [value, size]);
 
-        if (!dataUrl) {
-          return <div style={{ width: size, height: size }} className="flex items-center justify-center bg-gray-100 rounded-md"><p>Generating...</p></div>;
-        }
-
-        return <img src={dataUrl} alt="QR Code Connection Signal" />;
+        if (!dataUrl) return <div style={{ width: size, height: size }} className="flex items-center justify-center bg-gray-100 rounded-md"><p>Generating...</p></div>;
+        return <img src={dataUrl} alt="Bill Data QR Code" />;
       };
       
       const BillHistoryModal = ({ allBills, onClose, currency, onReprint }) => {
         const [searchTerm, setSearchTerm] = useState('');
-
         const filteredBills = allBills.filter(bill => 
             bill.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             bill.billNumber.toString().includes(searchTerm)
@@ -109,17 +100,13 @@
         const [notification, setNotification] = useState(null);
         const [allBills, setAllBills] = useState([]);
         const [showHistory, setShowHistory] = useState(false);
-        
-        const [isHost, setIsHost] = useState(false);
-        const [isClient, setIsClient] = useState(false);
-        const [connectionStatus, setConnectionStatus] = useState('Disconnected');
-        const [showQRModal, setShowQRModal] = useState(false);
-        const [offerSignal, setOfferSignal] = useState('');
-        const [answerSignal, setAnswerSignal] = useState('');
-        const peerRef = useRef();
+        const [qrCodeData, setQrCodeData] = useState(null);
+        const [isScanning, setIsScanning] = useState(false);
 
         const customerNameRef = useRef();
         const itemRefs = useRef({});
+        const videoRef = useRef(null);
+        const qrScannerRef = useRef(null);
 
         useEffect(() => {
             const savedBills = JSON.parse(localStorage.getItem('geetaSonsBills')) || [];
@@ -131,87 +118,69 @@
             setTimeout(() => setNotification(null), 3000);
         };
         
-        const setupPeer = (initiator) => {
-            const peer = new SimplePeer({ initiator, trickle: false });
+        const scanBillFromCamera = useCallback(() => {
+            setIsScanning(true);
+            const qrScanner = new window.QrScanner(
+                videoRef.current,
+                result => {
+                    try {
+                        const bill = JSON.parse(result.data);
+                        if(bill && bill.billNumber && bill.items) {
+                            const updatedBills = [...allBills, bill];
+                            setAllBills(updatedBills);
+                            localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
+                            showNotification(`Successfully imported Bill #${bill.billNumber}`, 'success');
+                            qrScanner.stop();
+                            setIsScanning(false);
+                        }
+                    } catch (e) {
+                        showNotification('Invalid QR code scanned.');
+                        qrScanner.stop();
+                        setIsScanning(false);
+                    }
+                },
+                { highlightScanRegion: true, highlightCodeOutline: true }
+            );
+            qrScanner.start();
+            qrScannerRef.current = qrScanner;
+        }, [allBills]);
 
-            peer.on('error', err => {
-                console.error('WebRTC Error:', err);
-                setConnectionStatus('Error');
-                showNotification('Connection error occurred.');
-            });
-
-            peer.on('connect', () => {
-                setConnectionStatus('Connected');
-                setShowQRModal(false);
-                showNotification(initiator ? 'Phone connected!' : 'Connected to Laptop!', 'success');
-            });
-
-            peer.on('close', () => {
-                setConnectionStatus('Disconnected');
-                peerRef.current = null;
-                setIsHost(false);
-                setIsClient(false);
-                showNotification('Sync connection closed.', 'success');
-            });
-            
-            peer.on('signal', data => {
-                if (initiator) {
-                    setOfferSignal(JSON.stringify(data));
-                } else {
-                    setAnswerSignal(JSON.stringify(data));
-                }
-            });
-
-            peer.on('data', data => {
-                try {
-                    const bill = JSON.parse(data.toString());
-                    setAllBills(prev => {
-                        const updatedBills = [...prev, bill];
-                        localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
-                        return updatedBills;
-                    });
-                    showNotification(`Received Bill #${bill.billNumber} from phone.`, 'success');
-                } catch (err) { console.error("Failed to parse incoming bill data:", err); }
-            });
-
-            peerRef.current = peer;
-        };
-
-        const startHostSession = () => {
-            setIsHost(true);
-            setupPeer(true);
-            setShowQRModal(true);
-        };
-
-        const connectToHost = () => {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = 'image/*';
-            fileInput.onchange = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                try {
-                    const scannedData = await window.QrScanner.scanImage(file, { returnDetailedScanResult: true });
-                    setIsClient(true);
-                    setupPeer(false);
-                    peerRef.current.signal(JSON.parse(scannedData.data));
-                } catch (err) { showNotification("Could not read QR code from image."); }
-            };
-            fileInput.click();
-        };
-
-        const submitAnswer = () => {
-            if (peerRef.current && answerSignal) {
-                try { peerRef.current.signal(JSON.parse(answerSignal)); }
-                catch(e) { showNotification("Invalid Authorization Key format."); }
+        const stopScanning = () => {
+            if (qrScannerRef.current) {
+                qrScannerRef.current.stop();
+                qrScannerRef.current = null;
             }
+            setIsScanning(false);
         };
+        
+        const generateQrCode = useCallback(() => {
+            const currentTotal = items.reduce((sum, item) => sum + item.total, 0);
+            const finalGrandTotal = currentTotal + Number(previousBalance || 0);
+
+            if (finalGrandTotal <= 0) {
+                showNotification("Cannot generate QR for an empty bill.");
+                return;
+            }
+             const receiptData = { 
+                id: Date.now(), 
+                billNumber, 
+                date: new Date().toISOString(),
+                customerName: customerName || 'Walk-in Customer', 
+                customerPhone,
+                items: items.filter(i => i.price > 0), 
+                itemsTotal: currentTotal,
+                previousBalance: Number(previousBalance || 0), 
+                grandTotal: finalGrandTotal, 
+                currency
+            };
+            setQrCodeData(JSON.stringify(receiptData));
+        }, [billNumber, customerName, customerPhone, items, previousBalance, currency]);
 
         const itemsTotal = items.reduce((sum, item) => sum + item.total, 0);
         const grandTotal = itemsTotal + Number(previousBalance || 0);
         
         const sendPrintRequest = async (receiptData) => {
-             try {
+            try {
                 const response = await fetch('http://localhost:4000/print', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -239,7 +208,6 @@
             setTimeout(() => customerNameRef.current?.focus(), 100);
         }, []);
 
-
         const printInvoice = useCallback(async () => {
             if (grandTotal <= 0) {
                 showNotification("Cannot process an empty invoice.");
@@ -247,51 +215,31 @@
             }
 
             const receiptData = { 
-                id: Date.now(),
-                billNumber,
-                date: new Date().toISOString(),
-                customerName: customerName || 'Walk-in Customer',
-                customerPhone,
-                items: items.filter(i => i.price > 0),
-                itemsTotal,
-                previousBalance: Number(previousBalance || 0),
-                grandTotal,
-                currency
+                id: Date.now(), billNumber, date: new Date().toISOString(),
+                customerName: customerName || 'Walk-in Customer', customerPhone,
+                items: items.filter(i => i.price > 0), itemsTotal,
+                previousBalance: Number(previousBalance || 0), grandTotal, currency
             };
-
-            if (isClient && peerRef.current?.connected) {
-                peerRef.current.send(JSON.stringify(receiptData));
-                showNotification("Bill sent to laptop!", "success");
-                setAllBills(prev => {
-                    const updatedBills = [...prev, receiptData];
-                    localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
-                    return updatedBills;
-                });
-                setTimeout(generateNewBill, 1500);
-                return;
-            }
-
+            
             const printed = await sendPrintRequest(receiptData);
             if (printed) {
-                setAllBills(prev => {
-                    const updatedBills = [...prev, receiptData];
-                    localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
-                    return updatedBills;
-                });
+                const updatedBills = [...allBills, receiptData];
+                localStorage.setItem('geetaSonsBills', JSON.stringify(updatedBills));
+                setAllBills(updatedBills);
                 setTimeout(generateNewBill, 1500);
             }
-        }, [grandTotal, billNumber, isClient, connectionStatus, allBills, customerName, customerPhone, items, itemsTotal, previousBalance, currency, generateNewBill]);
+        }, [grandTotal, billNumber, allBills, customerName, customerPhone, items, itemsTotal, previousBalance, currency, generateNewBill]);
         
         const updateItemTotal = useCallback((id, field, value) => {
           if (isInvoiceFinalized) return;
-          setItems(items => items.map(item => {
+          setItems(currentItems => currentItems.map(item => {
             if (item.id === id) {
               let updatedValue = value;
               if (field === 'quantity') updatedValue = Math.max(1, Number(value) || 1);
               if (field === 'price') updatedValue = Math.max(0, Number(value) || 0);
               const updatedItem = { ...item, [field]: updatedValue };
               if (field === 'quantity' || field === 'price') {
-                updatedItem.total = updatedItem.quantity * updatedItem.price;
+                updatedItem.total = (updatedItem.quantity || 0) * (updatedItem.price || 0);
               }
               return updatedItem;
             }
@@ -343,8 +291,7 @@
         const addItem = useCallback(() => {
           if (isInvoiceFinalized) return;
           const newItemId = Date.now();
-          const newItem = { id: newItemId, name: '', quantity: 1, price: 0, total: 0 };
-          setItems(prev => [...prev, newItem]);
+          setItems(prev => [...prev, { id: newItemId, name: '', quantity: 1, price: 0, total: 0 }]);
           setTimeout(() => {
             const ref = itemRefs.current[`${newItemId}-quantity`];
             if (ref) { ref.focus(); ref.select(); }
@@ -354,8 +301,7 @@
         const addItemAndFocusPrice = useCallback(() => {
           if (isInvoiceFinalized) return;
           const newItemId = Date.now();
-          const newItem = { id: newItemId, name: '', quantity: 1, price: 0, total: 0 };
-          setItems(prev => [...prev, newItem]);
+          setItems(prev => [...prev, { id: newItemId, name: '', quantity: 1, price: 0, total: 0 }]);
           setTimeout(() => {
             const ref = itemRefs.current[`${newItemId}-price`];
             if (ref) { ref.focus(); ref.select(); }
@@ -380,21 +326,22 @@
             await sendPrintRequest(billToReprint);
         };
         
-        useEffect(() => {
-            document.documentElement.classList.toggle('dark', darkMode);
-        }, [darkMode]);
+        useEffect(() => { document.documentElement.classList.toggle('dark', darkMode); }, [darkMode]);
 
         useEffect(() => {
           const handleKeyDown = (e) => {
+            if (isScanning || qrCodeData) {
+                if(e.key === 'Escape') {
+                    stopScanning();
+                    setQrCodeData(null);
+                }
+                return;
+            }
             if (e.key === '+' || e.key === '=') { e.preventDefault(); addItemAndFocusPrice(); return; }
             if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); addItem(); }
             if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) { e.preventDefault(); generateNewBill(); }
             if (e.key === 'Escape') {
-              if (showHistory || showQRModal) {
-                  setShowHistory(false);
-                  setShowQRModal(false);
-                  if (peerRef.current) peerRef.current.destroy();
-              }
+              if (showHistory) setShowHistory(false);
               else if (customerNameRef.current) customerNameRef.current.focus();
             }
             if (e.ctrlKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); if(!isInvoiceFinalized) finalizeInvoice(); }
@@ -403,46 +350,29 @@
 
           window.addEventListener('keydown', handleKeyDown);
           return () => window.removeEventListener('keydown', handleKeyDown);
-        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized, showHistory, showQRModal, addItemAndFocusPrice]);
+        }, [addItem, generateNewBill, finalizeInvoice, printInvoice, isInvoiceFinalized, showHistory, qrCodeData, isScanning, addItemAndFocusPrice]);
 
 
         return (
           <>
             {showHistory && <BillHistoryModal allBills={allBills} onClose={() => setShowHistory(false)} currency={currency} onReprint={handleReprint} />}
             
-            {showQRModal && isHost && (
+            {qrCodeData && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
                     <div className="bg-white dark:bg-gray-800 rounded-lg p-6 text-center modal-fade-in">
-                        <h2 className="text-xl font-bold mb-4">Sync Session Started</h2>
-                        <p className="mb-4">Scan this QR code with your phone to connect.</p>
+                        <h2 className="text-xl font-bold mb-4">Scan to Transfer Bill</h2>
                         <div className="flex justify-center">
-                            {offerSignal ? <QRCodeComponent value={offerSignal} size={256} /> : <p>Generating code...</p>}
+                            <QRCodeComponent value={qrCodeData} size={256} />
                         </div>
-                        <button onClick={() => {setShowQRModal(false); peerRef.current?.destroy();}} className="mt-4 bg-red-500 text-white px-4 py-2 rounded-md">Cancel</button>
-                        
-                        <div className="mt-6 border-t pt-4">
-                            <label className="block text-sm font-medium mb-2">Enter Phone's Authorization Key:</label>
-                            <textarea
-                                value={answerSignal}
-                                onChange={(e) => setAnswerSignal(e.target.value)}
-                                className="w-full p-2 text-xs bg-gray-100 dark:bg-gray-700 rounded-md"
-                                rows="3"
-                                placeholder="Paste key from phone here..."
-                            />
-                            <button onClick={submitAnswer} disabled={!answerSignal} className="mt-2 bg-green-500 text-white px-4 py-2 rounded-md disabled:bg-gray-400">Connect</button>
-                        </div>
+                        <button onClick={() => setQrCodeData(null)} className="mt-6 bg-blue-500 text-white px-6 py-2 rounded-md">Done</button>
                     </div>
                 </div>
             )}
-            
-            {isClient && answerSignal && connectionStatus !== 'Connected' && (
-                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 text-center modal-fade-in">
-                        <h2 className="text-xl font-bold mb-4">Authorization Required</h2>
-                        <p className="mb-2">Enter this key on your laptop to complete the connection:</p>
-                        <textarea readOnly value={answerSignal} className="w-full p-2 text-xs bg-gray-100 dark:bg-gray-700 rounded-md" rows="3"/>
-                        <p className="text-sm mt-2 text-gray-500">Waiting for laptop...</p>
-                    </div>
+
+            {isScanning && (
+                <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
+                    <video ref={videoRef} className="w-full max-w-md h-auto rounded-lg shadow-2xl"></video>
+                    <button onClick={stopScanning} className="mt-4 bg-red-500 text-white px-6 py-2 rounded-md">Cancel Scan</button>
                 </div>
             )}
 
@@ -452,15 +382,7 @@
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                             <div><h1 className="text-3xl font-bold text-blue-600 dark:text-blue-400">Geeta Sons</h1></div>
                             <div className="flex items-center gap-2">
-                                {connectionStatus === 'Disconnected' && (
-                                    <>
-                                        <button onClick={startHostSession} className="hidden md:block bg-blue-500 text-white text-sm font-medium px-3 py-1.5 rounded-full">Start Sync Session</button>
-                                        <button onClick={connectToHost} className="md:hidden bg-green-500 text-white text-sm font-medium px-3 py-1.5 rounded-full">Connect to Laptop</button>
-                                    </>
-                                )}
-                                {connectionStatus !== 'Disconnected' && (
-                                     <div className="bg-green-100 dark:bg-green-900/50 px-3 py-1.5 rounded-full"><span className="text-green-800 dark:text-green-300 font-medium">{connectionStatus}...</span></div>
-                                )}
+                                <button onClick={scanBillFromCamera} className="bg-green-500 text-white text-sm font-medium px-3 py-1.5 rounded-full hover:bg-green-600">Scan Bill</button>
                                 <button onClick={() => setShowHistory(true)} className="bg-gray-200 dark:bg-gray-700 text-sm font-medium px-3 py-1.5 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600">View History</button>
                                 <div className="bg-gray-200 dark:bg-gray-700 p-1 rounded-full flex items-center">
                                     <button onClick={() => setDarkMode(false)} className={`p-1.5 rounded-full transition-colors ${!darkMode ? 'bg-white shadow' : 'text-gray-500'}`}><SunIcon /></button>
@@ -484,6 +406,7 @@
                             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 space-y-3">
                                 <button onClick={finalizeInvoice} disabled={isInvoiceFinalized || (itemsTotal <= 0 && Number(previousBalance || 0) <= 0)} className="w-full py-3 px-4 rounded-md font-bold text-white transition-all duration-200 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed bg-purple-500 hover:bg-purple-600 transform hover:scale-105">✅ Finalize Invoice (Ctrl+F)</button>
                                 <button onClick={printInvoice} disabled={!isInvoiceFinalized} className="w-full py-3 px-4 rounded-md font-bold text-white transition-all duration-200 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed bg-green-600 hover:bg-green-700 transform hover:scale-105">🖨️ Print & New (Ctrl+P)</button>
+                                <button onClick={generateQrCode} disabled={!isInvoiceFinalized} className="w-full py-3 px-4 rounded-md font-bold text-white transition-all duration-200 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700 transform hover:scale-105">📱 Generate QR</button>
                                 <button onClick={generateNewBill} className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-md font-bold transition-all duration-200 transform hover:scale-105">➕ New Bill (Ctrl+Shift+N)</button>
                             </div>
                             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
